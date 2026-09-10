@@ -61,17 +61,21 @@ function officialProbe(gateway) {
 function pendingRewards(rewards) {
     return `<div class="reward-line"><span>Rewards pendientes</span><strong>${nymBalance(rewards?.unym)}</strong></div>`;
 }
+function lastClaim(claim) {
+    const date = claim?.timestamp && Number.isFinite(Date.parse(claim.timestamp)) ? shortDate(claim.timestamp) : 'Sin registro';
+    return `<div class="claim-line"><span>Último reclamo</span><strong>${date}</strong><span>Importe</span><strong>${nymBalance(claim?.unym)}</strong></div>`;
+}
 function explorerCard(entry) {
     if (!entry) return '<div class="notice">Consultando red…</div>';
-    const n=entry.data?.node, rewards=pendingRewards(entry.data?.rewards);
+    const n=entry.data?.node, rewards=pendingRewards(entry.data?.rewards), claim=lastClaim(entry.data?.claim);
     const probe=entry.kind === 'mixnode' ? '' : officialProbe(entry.data?.gateway);
-    if (!n) return rewards+'<div class="notice stale">Datos de red no disponibles</div>'+probe;
+    if (!n) return rewards+claim+'<div class="notice stale">Datos de red no disponibles</div>'+probe;
     const costs=n.rewarding_details?.cost_params;
     const margin=typeof costs?.profit_margin_percent === 'string' && /^\d+(\.\d+)?$/.test(costs.profit_margin_percent) ? percent(Number(costs.profit_margin_percent)) : '—';
     const date=entry.data.meta?.last_updated;
     return `${rewards}<div class="metric-grid network-metrics">${metric('Rendimiento',percent(n.performance_score))}${metric('Saturación',percent(n.uncapped_saturation ?? n.stake_saturation))}${metric('Activo · 24 h',entry.data.activity?.period_hours === 24 && numeric(entry.data.activity?.frequency_percentage) ? percent(entry.data.activity.frequency_percentage/100) : '—')}${metric('Stake',stake(n.total_stake))}${metric('Delegaciones',count(n.rewarding_details?.unique_delegations))}${metric('Configuración',percent(n.config_score))}</div>
     <details open class="fold"><summary>Detalle de staking <span>#${escapeHtml(n.node_id)}</span></summary><div class="metric-grid">${metric('Aporte',stake(n.original_pledge))}${metric('Margen',margin)}${metric('Costo operativo / intervalo',costs?.interval_operating_cost?.denom === 'unym' ? stake(costs.interval_operating_cost.amount) : '—')}${metric('Bonding',yesNo(n.bonded))}${metric('Versiones atrasadas',count(n.versions_behind))}${metric('Estrés: alcanzable',yesNo(n.stress_was_reachable))}</div><div class="address"><span>Wallet de bonding</span><code>${escapeHtml(n.bonding_address || '—')}</code></div></details>
-    ${probe}<div class="stamp ${numeric(date) && Date.now()-date*1000>900000 ? 'stale' : ''}">Red · ${numeric(date) ? shortDate(date*1000) : '—'}${entry.errors?.length ? ' · datos parciales' : ''}</div>`;
+    ${probe}${claim}<div class="stamp ${numeric(date) && Date.now()-date*1000>900000 ? 'stale' : ''}">Red · ${numeric(date) ? shortDate(date*1000) : '—'}${entry.errors?.length ? ' · datos parciales' : ''}</div>`;
 }
 function updateTotalRewards() {
     const ids = configuredNodes.map(node => node.key);

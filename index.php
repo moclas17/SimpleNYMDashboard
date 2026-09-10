@@ -11,7 +11,7 @@ $directCount = count(array_filter($publicNodes, static fn($n) => $n['direct']));
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
     <title>Nym · Monitor de nodos</title>
-    <link rel="stylesheet" href="assets/dashboard.css?v=20260910-5">
+    <link rel="stylesheet" href="assets/dashboard.css?v=20260910-7">
     <script id="dashboard-config" type="application/json"><?php echo json_encode(['nodes' => $publicNodes, 'refresh_seconds' => $config['refresh_seconds']], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
     <script src="assets/dashboard.js?v=<?php echo filemtime(__DIR__ . '/assets/dashboard.js'); ?>" defer></script>
 </head>

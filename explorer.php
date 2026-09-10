@@ -23,7 +23,7 @@ $requests = [];
 $nodes = [];
 foreach ($identities as $name => [$id, $identity]) {
     $nodes[$name] = ['kind' => $config['nodes'][$name]['kind'], 'data' => [], 'errors' => []];
-    foreach (['node' => '', 'meta' => '/meta', 'activity' => '/active-set-frequency', 'gateway' => '', 'rewards' => ''] as $key => $suffix) {
+    foreach (['node' => '', 'meta' => '/meta', 'activity' => '/active-set-frequency', 'gateway' => '', 'rewards' => '', 'claim' => ''] as $key => $suffix) {
         if ($key === 'gateway' && $config['nodes'][$name]['kind'] === 'mixnode') continue;
         $url = $key === 'gateway' ? 'https://mainnet-node-status-api.nymtech.cc/v2/gateways/' . $identity
             : 'https://api.nym.spectredao.net/api/v1/nodes/' . $id . $suffix;
@@ -31,6 +31,11 @@ foreach ($identities as $name => [$id, $identity]) {
             $query = base64_encode(json_encode(['get_pending_node_operator_reward' => ['node_id' => $id]]));
             $url = 'https://api.nymtech.net/cosmwasm/wasm/v1/contract/'
                 . 'n17srjznxl9dvzdkpwpw24gg668wc73val88a6m5ajg6ankwvz9wtst0cznr/smart/' . rawurlencode($query);
+        }
+        if ($key === 'claim') {
+            $url = 'https://api.nymtech.net/cosmos/tx/v1beta1/txs?query='
+                . rawurlencode("wasm-v2_withdraw_operator_reward.mix_id='$id'")
+                . '&order_by=ORDER_BY_DESC&limit=1';
         }
         $ch = curl_init($url);
         curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 4,
@@ -63,6 +68,23 @@ foreach ($requests as [$ch, $name, $key]) {
         $valid = is_array($coin) && ($coin['denom'] ?? null) === 'unym'
             && is_string($coin['amount'] ?? null) && preg_match('/^[0-9]+$/D', $coin['amount']);
         if ($valid) $data = ['unym' => $coin['amount'], 'checked_at' => gmdate('c')];
+    }
+    if ($valid && $key === 'claim') {
+        $tx = $data['tx_responses'][0] ?? null;
+        $claim = ['timestamp' => null, 'unym' => null];
+        if (is_array($tx) && ($tx['code'] ?? 1) === 0) {
+            foreach (($tx['events'] ?? []) as $event) {
+                if (($event['type'] ?? '') !== 'wasm-v2_withdraw_operator_reward') continue;
+                foreach (($event['attributes'] ?? []) as $attribute) {
+                    if (($attribute['key'] ?? '') === 'amount' && is_string($attribute['value'] ?? null)) {
+                        $claim['unym'] = preg_replace('/[^0-9]/', '', $attribute['value']);
+                    }
+                }
+                $claim['timestamp'] = is_string($tx['timestamp'] ?? null) ? $tx['timestamp'] : null;
+                break;
+            }
+        }
+        $data = $claim;
     }
     if ($valid) $nodes[$name]['data'][$key] = $data;
     else $nodes[$name]['errors'][] = $key;
