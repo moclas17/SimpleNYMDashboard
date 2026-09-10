@@ -75,6 +75,11 @@ foreach ($requests as [$ch, $name, $key]) {
         if (is_array($tx) && ($tx['code'] ?? 1) === 0) {
             foreach (($tx['events'] ?? []) as $event) {
                 if (($event['type'] ?? '') !== 'wasm-v2_withdraw_operator_reward') continue;
+                $eventNodeId = null;
+                foreach (($event['attributes'] ?? []) as $attribute) {
+                    if (($attribute['key'] ?? '') === 'mix_id') $eventNodeId = (string) ($attribute['value'] ?? '');
+                }
+                if ($eventNodeId !== (string) $id) continue;
                 foreach (($event['attributes'] ?? []) as $attribute) {
                     if (($attribute['key'] ?? '') === 'amount' && is_string($attribute['value'] ?? null)) {
                         $claim['unym'] = preg_replace('/[^0-9]/', '', $attribute['value']);
@@ -88,6 +93,48 @@ foreach ($requests as [$ch, $name, $key]) {
     }
     if ($valid) $nodes[$name]['data'][$key] = $data;
     else $nodes[$name]['errors'][] = $key;
+    curl_multi_remove_handle($multi, $ch);
+    curl_close($ch);
+}
+curl_multi_close($multi);
+
+// Query the on-chain balance of each node's bonding address.
+$multi = curl_multi_init();
+$requests = [];
+foreach ($nodes as $name => $node) {
+    $address = $node['data']['node']['bonding_address'] ?? null;
+    if (!is_string($address) || !preg_match('/^n1[023456789acdefghjklmnpqrstuvwxyz]{38}$/D', $address)) {
+        $nodes[$name]['errors'][] = 'bonding_balance';
+        continue;
+    }
+    $ch = curl_init('https://api.nymtech.net/cosmos/bank/v1beta1/balances/' . rawurlencode($address));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT => 9, CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_HTTPHEADER => ['Accept: application/json']]);
+    curl_multi_add_handle($multi, $ch);
+    $requests[] = [$ch, $name];
+}
+do {
+    $status = curl_multi_exec($multi, $running);
+    if ($running && $status === CURLM_OK && curl_multi_select($multi, 0.5) === -1) usleep(10000);
+} while ($running && $status === CURLM_OK);
+foreach ($requests as [$ch, $name]) {
+    $body = curl_multi_getcontent($ch);
+    $value = is_string($body) ? json_decode($body, true) : null;
+    $amount = null;
+    if (curl_errno($ch) === 0 && curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200
+        && is_array($value['balances'] ?? null)) {
+        if (isset($value['pagination']) && empty($value['pagination']['next_key'])) $amount = '0';
+        foreach ($value['balances'] as $coin) {
+            if (($coin['denom'] ?? '') === 'unym' && is_string($coin['amount'] ?? null)
+                && preg_match('/^[0-9]+$/D', $coin['amount'])) {
+                $amount = $coin['amount'];
+                break;
+            }
+        }
+    }
+    $nodes[$name]['data']['bonding_balance'] = $amount;
+    if ($amount === null) $nodes[$name]['errors'][] = 'bonding_balance';
     curl_multi_remove_handle($multi, $ch);
     curl_close($ch);
 }

@@ -74,7 +74,7 @@ function explorerCard(entry) {
     const margin=typeof costs?.profit_margin_percent === 'string' && /^\d+(\.\d+)?$/.test(costs.profit_margin_percent) ? percent(Number(costs.profit_margin_percent)) : '—';
     const date=entry.data.meta?.last_updated;
     return `${rewards}<div class="metric-grid network-metrics">${metric('Rendimiento',percent(n.performance_score))}${metric('Saturación',percent(n.uncapped_saturation ?? n.stake_saturation))}${metric('Activo · 24 h',entry.data.activity?.period_hours === 24 && numeric(entry.data.activity?.frequency_percentage) ? percent(entry.data.activity.frequency_percentage/100) : '—')}${metric('Stake',stake(n.total_stake))}${metric('Delegaciones',count(n.rewarding_details?.unique_delegations))}${metric('Configuración',percent(n.config_score))}</div>
-    <details open class="fold"><summary>Detalle de staking <span>#${escapeHtml(n.node_id)}</span></summary><div class="metric-grid">${metric('Aporte',stake(n.original_pledge))}${metric('Margen',margin)}${metric('Costo operativo / intervalo',costs?.interval_operating_cost?.denom === 'unym' ? stake(costs.interval_operating_cost.amount) : '—')}${metric('Bonding',yesNo(n.bonded))}${metric('Versiones atrasadas',count(n.versions_behind))}${metric('Estrés: alcanzable',yesNo(n.stress_was_reachable))}</div><div class="address"><span>Wallet de bonding</span><code>${escapeHtml(n.bonding_address || '—')}</code></div></details>
+    <details open class="fold"><summary>Detalle de staking <span>#${escapeHtml(n.node_id)}</span></summary><div class="metric-grid">${metric('Aporte',stake(n.original_pledge))}${metric('Margen',margin)}${metric('Costo operativo / intervalo',costs?.interval_operating_cost?.denom === 'unym' ? stake(costs.interval_operating_cost.amount) : '—')}${metric('Bonding',yesNo(n.bonded))}${metric('Versiones atrasadas',count(n.versions_behind))}${metric('Estrés: alcanzable',yesNo(n.stress_was_reachable))}</div><div class="address"><span>Wallet de bonding <b>${stake(entry.data.bonding_balance)}</b></span><code>${escapeHtml(n.bonding_address || '—')}</code></div></details>
     ${probe}${claim}<div class="stamp ${numeric(date) && Date.now()-date*1000>900000 ? 'stale' : ''}">Red · ${numeric(date) ? shortDate(date*1000) : '—'}${entry.errors?.length ? ' · datos parciales' : ''}</div>`;
 }
 function updateTotalRewards() {
@@ -87,6 +87,22 @@ function updateTotalRewards() {
     $('total-rewards-status').textContent = complete
         ? `${ids.length} nodos`
         : `Incompleto · ${available.length}/${ids.length} nodos`;
+}
+function updateTotalWallets() {
+    const wallets = configuredNodes.flatMap(node => {
+        const entries = [];
+        if (node.direct) entries.push(directData.get(node.key)?.data?.wallet?.unym);
+        entries.push(explorerData.get(node.key)?.data?.bonding_balance);
+        return entries;
+    });
+    const amounts = wallets;
+    const available = amounts.filter(value => typeof value === 'string' && /^\d+$/.test(value));
+    const complete = wallets.length > 0 && available.length === wallets.length;
+    $('total-wallets').textContent = complete
+        ? nymBalance(available.reduce((sum, value) => sum + BigInt(value), 0n).toString()) : '—';
+    $('total-wallets-status').textContent = complete
+        ? `${wallets.length} wallets · servicio y bonding`
+        : `Incompleto · ${available.length}/${wallets.length} wallets`;
 }
 function replaceContent(target, html) {
     const open = Array.from(target.querySelectorAll('details')).map(detail => detail.open);
@@ -109,6 +125,7 @@ async function refreshExplorer() {
         clearTimeout(timer);
         explorerBusy = false;
         updateTotalRewards();
+        updateTotalWallets();
         renderConfiguredNodes();
     }
 }
@@ -135,9 +152,9 @@ function card(node) {
     const d=node.data, health=d.health, active=health?.status === 'up';
     return `<div class="node-top"><h3>${escapeHtml(node.name || node.id)}</h3><span class="badge ${active ? '' : 'warning'}">${!health ? 'Sin respuesta' : active ? 'Activo' : 'No saludable'}</span></div>
     <div class="node-meta"><span>Gateway · v${escapeHtml(d.build?.build_version || '—')}</span><span>Términos ${yesNo(d.auxiliary?.accepted_operator_terms_and_conditions)}</span></div>
-    <div class="metric-grid direct-metrics">${metric('Uptime',uptime(health?.uptime))}${metric('Carga',escapeHtml(loads[d.load?.total] || d.load?.total || '—'))}${metric('API',numeric(node.latency_ms) ? count(node.latency_ms)+' ms' : '—')}${metric('TX',bytes(d.wireguard?.bytes_tx))}${metric('RX',bytes(d.wireguard?.bytes_rx))}${metric('Saldo Wallet Servicio',walletAmount(d.wallet))}</div>
+    <div class="metric-grid direct-metrics">${metric('Uptime',uptime(health?.uptime))}${metric('Carga',escapeHtml(loads[d.load?.total] || d.load?.total || '—'))}${metric('API',numeric(node.latency_ms) ? count(node.latency_ms)+' ms' : '—')}${metric('TX',bytes(d.wireguard?.bytes_tx))}${metric('RX',bytes(d.wireguard?.bytes_rx))}</div>
     <section class="explorer" id="explorer-${escapeHtml(node.id)}">${explorerCard(explorerData.get(node.id))}</section>
-    <details open class="fold direct-detail"><summary>Detalle del gateway${node.errors.length ? '<span class="stale">Datos parciales</span>' : ''}</summary><div class="metric-grid">${metric('Paquetes enviados',count(d.packets?.egress_mixing?.forward_hop_packets_sent))}${metric('Descartados',count(drops(d.packets)))}</div><div class="address"><span>Wallet del servicio</span><code>${escapeHtml(d.wallet?.address || '—')}</code></div><div class="address"><span>Host</span><code>${escapeHtml(node.host)}</code></div></details>`;
+    <details open class="fold direct-detail"><summary>Detalle del gateway${node.errors.length ? '<span class="stale">Datos parciales</span>' : ''}</summary><div class="metric-grid">${metric('Paquetes enviados',count(d.packets?.egress_mixing?.forward_hop_packets_sent))}${metric('Descartados',count(drops(d.packets)))}</div><div class="address"><span>Wallet del servicio <b>${walletAmount(d.wallet)}</b></span><code>${escapeHtml(d.wallet?.address || '—')}</code></div><div class="address"><span>Host</span><code>${escapeHtml(node.host)}</code></div></details>`;
 }
 let busy = false;
 async function refresh() {
@@ -155,6 +172,7 @@ async function refresh() {
         if (!response.ok || !Array.isArray(result.nodes) || result.nodes.length !== directNodes.length) throw new Error(result.error || 'Respuesta no válida.');
         const nodes = result.nodes;
         for (const node of nodes) directData.set(node.id, node);
+        updateTotalWallets();
         renderConfiguredNodes();
         const known = nodes.every(n => n.data.health);
         $('online').innerHTML = `${nodes.filter(n => n.data.health?.status === 'up').length}<small> / ${nodes.length}${known ? '' : ' · sin verificar'}</small>`;
